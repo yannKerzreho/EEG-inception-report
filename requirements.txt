@@ -1,4 +1,5 @@
+mne
 jupyterlab
 matplotlib
-pytorch
+torch
 braindecode
