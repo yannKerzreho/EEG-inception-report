@@ -1,5 +1,4 @@
 # report
 
--pip install requirements.txt
-
-intaller les données depuis: https://www.bbci.de/competition/iv/#datasets (420 MB)
+!pip install -r requirements.txt
+!git clone https://github.com/bregydoc/bcidatasetIV2a
