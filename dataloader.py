@@ -1,5 +1,5 @@
 import numpy as np
-import scipy.io  # Indispensable pour lire les .mat
+import scipy.io # pour lire les .mat
 import os
 
 def dataloader(subject_id):
@@ -11,11 +11,7 @@ def dataloader(subject_id):
     # Données brutes (signaux)
     path_train_npz = f'bcidatasetIV2a/A0{subject_id}T.npz'
     path_test_npz  = f'bcidatasetIV2a/A0{subject_id}E.npz'
-    
-    # Vrais labels (ajustez le nom de fichier selon ce que vous avez, ex: A01E.mat)
-    # Le user a dit "AOiX.mat", donc je suppose A01X.mat, A02X.mat...
     path_true_labels = f'true_labels/A0{subject_id}E.mat' 
-    # NOTE : Si vos fichiers s'appellent vraiment A01X.mat, changez 'E' par 'X' ci-dessus.
 
     # --- 2. Chargement du TRAIN (Facile, tout est dans le .npz) ---
     X_train, y_train = _load_data_internal(path_train_npz)
@@ -35,63 +31,60 @@ def dataloader(subject_id):
     return X_train, y_train, X_test, y_test
 
 def _load_data_internal(npz_path):
-    """Charge un fichier où les labels sont déjà connus (Train - 769 à 772)"""
+    """Charge un fichier où les labels sont déjà connus"""
     data = np.load(npz_path)
-    etyp = data['etyp'].T[0]
-    epos = data['epos'].T[0]
+    etyp = data['etyp'].flatten()
+    epos = data['epos'].flatten()
+    edur = data['edur'].flatten()
     signals = data['s']
 
-    # On ne garde que les essais moteurs (769-772)
-    valid_codes = [769, 770, 771, 772]
-    mask = np.isin(etyp, valid_codes)
+    indices = np.where(etyp == 768)[0]
+
+    epos = epos[indices]
+    edur = edur[indices]
+    etyp = etyp[indices+np.ones_like(indices)]
     
-    epos = epos[mask]
-    etyp = etyp[mask]
-    
-    return _create_arrays(signals, epos, etyp, source='internal')
+    return _create_arrays(signals, epos, etyp, edur, source='internal')
 
 def _load_data_external(npz_path, mat_path):
     """Charge un fichier masqué (Test - 783) et applique les labels du .mat"""
     data = np.load(npz_path)
-    etyp = data['etyp'].T[0]
-    epos = data['epos'].T[0]
+    etyp = data['etyp'].flatten()
+    epos = data['epos'].flatten()
+    edur = data['edur'].flatten()
     signals = data['s']
     
-    # On cherche uniquement les marqueurs "Inconnu/Test" (783)
-    mask = (etyp == 783)
-    epos = epos[mask]
-    # On n'utilise pas etyp ici car il vaut 783 partout
+    indices = np.where(etyp == 768)[0]
+
+    edur = edur[indices]
+    epos = epos[indices]
+    etyp = etyp[indices+np.ones_like(indices)]
     
-    # B. Charger le MAT pour avoir les classes (QUOI se passe)
     mat_data = scipy.io.loadmat(mat_path)
-    
-    # La clé s'appelle souvent 'classlabel' dans les fichiers BCI IV 2a
-    # .flatten() permet de passer d'un vecteur colonne (Nx1) à un tableau plat (N,)
     true_labels = mat_data['classlabel'].flatten() 
 
-    # C. Vérification de sécurité (CRITIQUE)
     if len(epos) != len(true_labels):
         raise ValueError(f"Désynchronisation ! {len(epos)} essais trouvés dans le .npz mais {len(true_labels)} labels dans le .mat")
 
-    return _create_arrays(signals, epos, true_labels, source='external')
+    return _create_arrays(signals, epos, true_labels, edur, source='external')
 
-def _create_arrays(signals, positions, labels, source):
+def _create_arrays(signals, positions, labels, length, source):
     """Fonction commune pour découper les signaux"""
+    if (length[0] != length).any():
+        raise ValueError("Tous les durées d'essais ne sont pas égales. Découpage non supporté.")
     n_trials = len(positions)
-    X = np.zeros((n_trials, 313, 22))
+    X = np.zeros((n_trials, length[0], 22))
     y = np.zeros(n_trials)
     
     for i in range(n_trials):
         start = positions[i]
-        # Découpage strict (313 points, 22 canaux)
-        X[i] = signals[start:start+313, 0:22]
+        # Découpage strict (length points, 22 canaux)
+        X[i] = signals[start:start+length[0], 0:22]
         
         # GESTION DES LABELS
         if source == 'internal':
-            # 769..772 -> 0..3
             y[i] = labels[i] - 769
         elif source == 'external':
-            # MATLAB est indexé à 1 (classes 1,2,3,4) -> Python (0,1,2,3)
-            y[i] = labels[i] - 1 
+            y[i] = labels[i] - 1
             
     return X, y
