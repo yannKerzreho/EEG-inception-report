@@ -1,4 +1,5 @@
 mne
+moabb
 jupyterlab
 matplotlib
 torch

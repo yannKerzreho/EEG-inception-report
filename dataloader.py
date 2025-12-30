@@ -15,14 +15,15 @@ def dataloader(subject_id):
 
     # --- 2. Chargement du TRAIN (Facile, tout est dans le .npz) ---
     X_train, y_train = _load_data_internal(path_train_npz)
-
+    X_train = X_train.transpose(0, 2, 1)
     # --- 3. Chargement du TEST (Complexe, besoin du .mat) ---
     if not os.path.exists(path_true_labels):
         raise FileNotFoundError(f"Fichier de labels manquant : {path_true_labels}")
     
     # On charge les signaux du test ET les vrais labels
     X_test, y_test = _load_data_external(path_test_npz, path_true_labels)
-
+    X_test = X_test.transpose(0, 2, 1)
+    
     print(f"X_train : {X_train.shape}") # Devrait être (n_run, 313, 22)
     print(f"y_train : {y_train.shape}") # Devrait être (n_run,)
     print(f"X_test  : {X_test.shape}")  # Devrait être (n_run, 313, 22)
