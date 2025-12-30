@@ -23,8 +23,8 @@ LR = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SAVE_DIR = "exp_global_logs"
 EVAL_INTERVAL = 10     # Évaluer toutes les X époques
-N_EVAL_SAMPLES = 200   # Taille du subset de validation statique
-
+N_EVAL_SAMPLES = 500   # Taille du subset de validation statique
+torch.manual_seed(42)
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # --- Fonctions ---
@@ -38,9 +38,6 @@ def get_aggregated_dataset():
     for subject_id in tqdm(SUBJECTS, desc="Loading Data"):
         try:
             xt, yt, xe, ye = dataloader(subject_id)
-            if xt.shape[2] < xt.shape[1]: 
-                xt = xt.transpose(0, 2, 1)
-                xe = xe.transpose(0, 2, 1)
             X_train_list.append(xt)
             y_train_list.append(yt)
             X_test_list.append(xe)
@@ -128,12 +125,8 @@ def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training
                 acc = (pred == y_val_static).sum().item() / N_EVAL_SAMPLES * 100
                 
                 val_accuracies.append(acc) # On stocke juste la valeur
-                current_acc_str = f"{acc:.1f}%"
+                current_acc_str = f"{acc:.2f}%"
             model.train()
-        else:
-            # Si on n'évalue pas, on remet la valeur précédente ou NaN pour garder l'alignement
-            # Mais pour le plot c'est plus simple de n'avoir que les points calculés
-            pass
             
         progress_bar.set_postfix({"Loss": f"{avg_loss:.4f}", "ValAcc": current_acc_str})
     
@@ -148,8 +141,6 @@ def evaluate_per_subject(model, subject_list, device):
         for subject_id in subject_list:
             try:
                 _, _, X_test, y_test = dataloader(subject_id)
-                if X_test.shape[2] < X_test.shape[1]:
-                    X_test = X_test.transpose(0, 2, 1)
                 
                 X_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
                 y_tensor = torch.tensor(y_test, dtype=torch.long).to(device)
@@ -202,20 +193,16 @@ if __name__ == "__main__":
     X_tensor_all = torch.tensor(X_train_all, dtype=torch.float32)
     
     freq_augm = HundredHzNoise(X_tensor_all, p=0.9)
-    # Récupération sécurisée du scale
-    scale_val = freq_augm.relative_scale
-    if isinstance(scale_val, torch.Tensor): scale_val = scale_val.item()
-        
-    print(f"Scale global : {scale_val:.5f}")
-    
-    gaus_augm = GaussianNoise(relative_scale=scale_val, p=0.9).to(DEVICE)
+    noise_sd = freq_augm.noise_sd
+    print(f"Noise SD : {noise_sd}")
+    gaus_augm = GaussianNoise(sd=noise_sd, p=0.9).to(DEVICE)
     freq_augm = freq_augm.to(DEVICE)
 
     # 3. Boucle d'Expérience
     conditions = {
-        "Baseline": None,
+        "GausAug": gaus_augm,
         "FreqAug": freq_augm,
-        "GausAug": gaus_augm
+        "Baseline": None,
     }
     
     detailed_results = []

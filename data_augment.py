@@ -26,7 +26,7 @@ class GaussianNoise(DataAugmentation):
     Ajoute un bruit gaussien dont l'écart-type est proportionnel 
     à l'écart-type du signal pour chaque canal individuel.
     """
-    def __init__(self, relative_scale, p=0.8):
+    def __init__(self, sd, p=0.8):
         """
         Args:
             relative_scale (float): Le facteur de proportionnalité. 
@@ -35,17 +35,17 @@ class GaussianNoise(DataAugmentation):
         """
         super().__init__(p=p)
         if isinstance(relative_scale, np.ndarray):
-            self.relative_scale = torch.tensor(relative_scale, dtype=torch.float32)
+            self.sd = torch.tensor(sd, dtype=torch.float32)
         else:
-            self.relative_scale = relative_scale
+            self.sd = sd
+        self.sd = self.sd.view(1, -1, 1)
 
     def augment(self, x):
         """
         x shape attendue : (Batch, Channels, Time)
         """
-        std_signal = x.std(dim=-1, keepdim=True)
         noise = torch.randn_like(x)
-        scaled_noise = noise * std_signal * self.relative_scale
+        scaled_noise = noise * std_signal * self.sd
         
         return x + scaled_noise
 
