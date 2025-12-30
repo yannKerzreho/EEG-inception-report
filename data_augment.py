@@ -34,8 +34,8 @@ class GaussianNoise(DataAugmentation):
             p (float): Probabilité d'application.
         """
         super().__init__(p=p)
-
-        self.relative_scale = relative_scale
+        if isinstance(relative_scale, np.ndarray):
+            self.relative_scale = torch.tensor(relative_scale, dtype=torch.float32)
 
     def augment(self, x):
         """
@@ -66,12 +66,12 @@ class HundredHzNoise(DataAugmentation):
 
         self.amplitude = amplitude
 
-        self.signal_sd = X_train.std(dim=-1).mean(dim=0)
+        self.signal_sd = X_train.std(dim=-1).mean(dim=0).cpu()
 
         self.noise_bank = self._extract_high_freq_noise(X_train, fs, cutoff)
-        self.noise_sd = self.noise_bank.std(dim=-1).mean(dim=0)
+        self.noise_sd = self.noise_bank.std(dim=-1).mean(dim=0).cpu()
         self.relative_scale = (self.noise_sd / self.signal_sd) * self.amplitude
-
+        
     def _extract_high_freq_noise(self, X, fs, cutoff):
         # Conversion en numpy si ce n'est pas déjà le cas
         if isinstance(X, torch.Tensor):

@@ -16,7 +16,7 @@ from data_augment import GaussianNoise, HundredHzNoise # Vos classes définies p
 # CONFIGURATION
 # ==========================================
 SUBJECTS = range(1, 10) # De 1 à 9
-N_EPOCHS = 50
+N_EPOCHS = 100
 BATCH_SIZE = 16 # Petit batch size pour la régularisation
 LR = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -113,10 +113,10 @@ if __name__ == "__main__":
         # 2. Préparation des Augmenteurs
         X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(DEVICE)
         freq_augm = HundredHzNoise(X_train_tensor, p=0.9).to(DEVICE)
-        scale = freq_augm.get_equivalent_gaussian_scale() 
+        scale = freq_augm.relative_scale.numpy()
         gaus_augm = GaussianNoise(relative_scale=scale, p=0.9).to(DEVICE)
 
-        print(f"  > Scale Bruit calculé : {scale:.4f}")
+        print(f"  > Scale Bruit calculé : {scale}")
 
         # 3. Lancement des 3 conditions
         conditions = {
