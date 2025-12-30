@@ -15,7 +15,7 @@ from data_augment import GaussianNoise, HundredHzNoise # Vos classes définies p
 # ==========================================
 # CONFIGURATION
 # ==========================================
-SUBJECTS = range(1, 10) # De 1 à 9
+SUBJECTS = range(1, 2) # De 1 à 9
 N_EPOCHS = 100
 BATCH_SIZE = 16 # Petit batch size pour la régularisation
 LR = 1e-3
@@ -51,7 +51,7 @@ def train_one_model(X_train, y_train, augmenter=None, desc="Train"):
 
     # 3. Boucle d'entrainement
     model.train()
-    for epoch in range(N_EPOCHS):
+    for epoch in tqdm(N_EPOCHS, desc="epoch"):
         epoch_loss = 0
 
         for Xb, yb in loader:
