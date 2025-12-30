@@ -49,11 +49,12 @@ def get_aggregated_dataset():
     return X_train_all, y_train_all
 
 def train_model(X_train, y_train, augmenter=None, desc="Training"):
-    dataset = TensorDataset(
-        torch.tensor(X_train, dtype=torch.float32), 
-        torch.tensor(y_train, dtype=torch.long)
-    )
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+    print("Transfert des données vers le device...")
+    X_tensor = torch.tensor(X_train, dtype=torch.float32).to(DEVICE)
+    y_tensor = torch.tensor(y_train, dtype=torch.long).to(DEVICE)
+    
+    dataset = TensorDataset(X_tensor, y_tensor)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
 
     model = EEGInceptionMI(
         n_chans=22,
@@ -75,7 +76,6 @@ def train_model(X_train, y_train, augmenter=None, desc="Training"):
         batch_count = 0
         
         for Xb, yb in loader:
-            Xb, yb = Xb.to(DEVICE), yb.to(DEVICE)
             if augmenter is not None:
                 Xb = augmenter(Xb)
 
