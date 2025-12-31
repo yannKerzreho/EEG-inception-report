@@ -17,13 +17,12 @@ from data_augment import GaussianNoise, HundredHzNoise
 # CONFIGURATION
 # ==========================================
 SUBJECTS = range(1, 10)
-N_EPOCHS = 100         # Remettez 100 pour la vraie expérience
-BATCH_SIZE = 64
+N_EPOCHS = 60
+BATCH_SIZE = 128
 LR = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-SAVE_DIR = "exp_global_logs"
-EVAL_INTERVAL = 10     # Évaluer toutes les X époques
-N_EVAL_SAMPLES = 500   # Taille du subset de validation statique
+SAVE_DIR = "exp1_logs"
+EVAL_INTERVAL = 5     # Évaluer toutes les X époques
 torch.manual_seed(42)
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -66,16 +65,8 @@ def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training
     # 2. PRÉPARATION DU SUBSET DE VALIDATION STATIQUE
     # On le fait une seule fois ICI pour ne pas ralentir la boucle
     # On tire N_EVAL_SAMPLES indices au hasard une fois pour toutes
-    X_test_temp = torch.tensor(X_test, dtype=torch.float32)
-    y_test_temp = torch.tensor(y_test, dtype=torch.long)
-    
-    idxs = torch.randperm(X_test_temp.size(0))[:N_EVAL_SAMPLES]
-    
-    # On envoie seulement ce petit bout sur le GPU pour validation rapide
-    X_val_static = X_test_temp[idxs].to(DEVICE)
-    y_val_static = y_test_temp[idxs].to(DEVICE)
-    
-    del X_test_temp, y_test_temp # Ménage RAM
+    X_val_static = torch.tensor(X_test, dtype=torch.float32).to(DEVICE)
+    y_val_static = torch.tensor(y_test, dtype=torch.long).to(DEVICE)
 
     # 3. SETUP MODÈLE
     model = EEGInceptionMI(
@@ -92,7 +83,7 @@ def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training
     val_accuracies = [] # Stocke (epoch, accuracy)
     
     model.train()
-    progress_bar = tqdm(range(1, N_EPOCHS + 1), desc=desc, unit="epoch")
+    progress_bar = tqdm(range(1, N_EPOCHS + 1), desc=desc, unit="ep")
     current_acc_str = "?"
     
     for epoch in progress_bar:
@@ -128,7 +119,7 @@ def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training
                 current_acc_str = f"{acc:.2f}%"
             model.train()
             
-        progress_bar.set_postfix({"Loss": f"{avg_loss:.4f}", "ValAcc": current_acc_str})
+        progress_bar.set_postfix({"Loss": f"{avg_loss:.4f}", "Acc": current_acc_str})
     
     return model, losses, val_accuracies
 
@@ -211,9 +202,7 @@ if __name__ == "__main__":
     all_losses_history = {}
     all_testacc_history = {}
 
-    for name, augmenter in conditions.items():
-        print(f"\n=== Condition : {name} ===")
-        
+    for name, augmenter in conditions.items():        
         # A. Entraînement Global (Avec monitoring Test optimisé)
         model, losses, val_accs = train_model(
             X_train_all, y_train_all, 

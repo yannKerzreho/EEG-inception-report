@@ -29,12 +29,11 @@ class GaussianNoise(DataAugmentation):
     def __init__(self, sd, p=0.8):
         """
         Args:
-            relative_scale (float): Le facteur de proportionnalité. 
-                                    0.1 signifie que le bruit aura 10% de l'amplitude du signal.
+            sd (float): sd du bruit blanc.
             p (float): Probabilité d'application.
         """
         super().__init__(p=p)
-        if isinstance(relative_scale, np.ndarray):
+        if isinstance(sd, np.ndarray):
             self.sd = torch.tensor(sd, dtype=torch.float32)
         else:
             self.sd = sd
@@ -44,8 +43,8 @@ class GaussianNoise(DataAugmentation):
         """
         x shape attendue : (Batch, Channels, Time)
         """
-        noise = torch.randn_like(x)
-        scaled_noise = noise * std_signal * self.sd
+        noise = torch.randn_like(x).to(x.device)
+        scaled_noise = noise * self.sd.to(x.device)
         
         return x + scaled_noise
 
