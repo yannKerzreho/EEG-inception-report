@@ -54,21 +54,10 @@ def get_aggregated_dataset():
     return X_train_all, y_train_all, X_test_all, y_test_all
 
 def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training"):
-    # 1. CHARGEMENT GPU MASSIF
-    X_train_gpu = torch.tensor(X_train, dtype=torch.float32).to(DEVICE)
-    y_train_gpu = torch.tensor(y_train, dtype=torch.long).to(DEVICE)
-    
-    # Dataset & Loader (Train)
-    dataset = TensorDataset(X_train_gpu, y_train_gpu)
+
+    dataset = TensorDataset(X_train, y_train)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
 
-    # 2. PRÉPARATION DU SUBSET DE VALIDATION STATIQUE
-    # On le fait une seule fois ICI pour ne pas ralentir la boucle
-    # On tire N_EVAL_SAMPLES indices au hasard une fois pour toutes
-    X_val_static = torch.tensor(X_test, dtype=torch.float32).to(DEVICE)
-    y_val_static = torch.tensor(y_test, dtype=torch.long).to(DEVICE)
-
-    # 3. SETUP MODÈLE
     model = EEGInceptionMI(
         n_chans=22,
         n_outputs=4,
@@ -111,9 +100,9 @@ def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training
         if epoch % EVAL_INTERVAL == 0:
             model.eval()
             with torch.no_grad():
-                out_test = model(X_val_static)
+                out_test = model(X_test)
                 _, pred = torch.max(out_test, 1)
-                acc = (pred == y_val_static).sum().item() / N_EVAL_SAMPLES * 100
+                acc = (pred == y_test).sum().item() / N_EVAL_SAMPLES * 100
                 
                 val_accuracies.append(acc) # On stocke juste la valeur
                 current_acc_str = f"{acc:.2f}%"
@@ -177,13 +166,18 @@ if __name__ == "__main__":
     print(f"=== Expérience Globale (Train Global -> Test par Sujet) ===")
     
     # 1. Chargement Train ET Test Globaux
-    X_train_all, y_train_all, X_test_all, y_test_all = get_aggregated_dataset()
+    X_train, y_train, X_test, y_test = get_aggregated_dataset()
+    
+    X_train_all = torch.tensor(X_train, dtype=torch.float32).to(DEVICE)
+    y_train_all = torch.tensor(y_train, dtype=torch.long).to(DEVICE)
+    X_test_all = torch.tensor(X_test, dtype=torch.float32).to(DEVICE)
+    y_test_all = torch.tensor(y_test, dtype=torch.long).to(DEVICE)
+
+    del X_train, y_train, X_test, y_test
     
     # 2. Calibration des bruits
-    print("\nCalibration des bruits...")
-    X_tensor_all = torch.tensor(X_train_all, dtype=torch.float32)
-    
-    freq_augm = HundredHzNoise(X_tensor_all, p=0.9)
+    print("\nCalibration des bruits...")    
+    freq_augm = HundredHzNoise(X_train_all, p=0.9)
     noise_sd = freq_augm.noise_sd
     print(f"Noise SD : {noise_sd}")
     gaus_augm = GaussianNoise(sd=noise_sd, p=0.9).to(DEVICE)
