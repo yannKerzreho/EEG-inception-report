@@ -1,0 +1,245 @@
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+import numpy as np
+import pandas as pd
+import os
+import pickle
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+from braindecode.models import EEGInceptionMI
+
+# Vos modules
+from dataloader import dataloader
+from data_augment import GaussianNoise, HundredHzNoise
+
+SUBJECTS = range(1, 10)
+N_EPOCHS = 200
+BATCH_SIZE = 128
+LR = 1e-3
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+SAVE_DIR = "exp2_logs"
+EVAL_INTERVAL = 5     # Évaluer toutes les X époques
+N_EVAL_SAMPLES = 500
+torch.manual_seed(42)
+os.makedirs(SAVE_DIR, exist_ok=True)
+# Condition on n_filters of EEGInceptionMI
+CONDITIONS = {
+        "4": 4,
+        "8": 8,
+        "16": 16,
+        "32": 32,
+    }
+
+def get_aggregated_dataset():
+    """Charge et concatène les données de TOUS les sujets."""
+    print("Chargement et fusion des données de tous les sujets...")
+    X_train_list, y_train_list = [], []
+    X_test_list, y_test_list = [], []
+    
+    for subject_id in tqdm(SUBJECTS, desc="Loading Data"):
+        try:
+            xt, yt, xe, ye = dataloader(subject_id)
+            X_train_list.append(xt)
+            y_train_list.append(yt)
+            X_test_list.append(xe)
+            y_test_list.append(ye)
+        except Exception as e:
+            print(f"Warning: Sujet {subject_id} ignoré ({e})")
+
+    X_train_all = np.concatenate(X_train_list, axis=0)
+    y_train_all = np.concatenate(y_train_list, axis=0)
+    X_test_all = np.concatenate(X_test_list, axis=0)
+    y_test_all = np.concatenate(y_test_list, axis=0)
+    
+    print(f"Dataset Global Train: {X_train_all.shape}")
+    print(f"Dataset Global Test : {X_test_all.shape}")
+    return X_train_all, y_train_all, X_test_all, y_test_all
+
+def train_model(X_train, y_train, X_test, y_test, n_filters, augmenter=None, desc="Training"):
+
+    dataset = TensorDataset(X_train, y_train)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+
+    model = EEGInceptionMI(
+        n_chans=22,
+        n_outputs=4,
+        n_times=X_train.shape[2], 
+        sfreq=250,
+        n_filters=n_filters
+    ).to(DEVICE)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    
+    losses = []
+    val_accuracies = [] # Stocke (epoch, accuracy)
+    
+    model.train()
+    progress_bar = tqdm(range(1, N_EPOCHS + 1), desc=desc, unit="ep")
+    current_acc_str = "?"
+    
+    for epoch in progress_bar:
+        epoch_loss = 0
+        batch_count = 0
+        
+        # --- TRAIN LOOP ---
+        for Xb, yb in loader:
+            if augmenter is not None:
+                Xb = augmenter(Xb)
+
+            optimizer.zero_grad()
+            out = model(Xb)
+            loss = criterion(out, yb)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+            batch_count += 1
+        
+        avg_loss = epoch_loss / batch_count
+        losses.append(avg_loss)
+        
+        # --- EVAL LOOP (Optimisée) ---
+        if epoch % EVAL_INTERVAL == 0:
+            model.eval()
+            with torch.no_grad():
+                idxs = torch.randperm(X_test.size(0))[:N_EVAL_SAMPLES]
+                X_sub = X_test[idxs]
+                y_sub = y_test[idxs]
+                
+                out_test = model(X_sub)
+                _, pred = torch.max(out_test, 1)
+                acc = (pred == y_sub).sum().item() / N_EVAL_SAMPLES * 100
+                
+                val_accuracies.append(acc) # On stocke juste la valeur
+                current_acc_str = f"{acc:.2f}%"
+            model.train()
+            
+        progress_bar.set_postfix({"Loss": f"{avg_loss:.4f}", "Acc": current_acc_str})
+    
+    return model, losses, val_accuracies
+
+def evaluate_per_subject(model, subject_list, device):
+    """Évalue le modèle global sur chaque sujet individuellement."""
+    model.eval()
+    subject_accuracies = {}
+    with torch.no_grad():
+        for subject_id in subject_list:
+            try:
+                _, _, X_test, y_test = dataloader(subject_id)
+                
+                X_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
+                y_tensor = torch.tensor(y_test, dtype=torch.long).to(device)
+                
+                out = model(X_tensor)
+                _, predicted = torch.max(out, 1)
+                
+                correct = (predicted == y_tensor).sum().item()
+                total = y_tensor.size(0)
+                acc = 100 * correct / total
+                subject_accuracies[subject_id] = acc
+            except Exception as e:
+                print(f"Erreur eval sujet {subject_id}: {e}")
+                subject_accuracies[subject_id] = np.nan
+    return subject_accuracies
+
+def plot_history(history_dict, title, ylabel, save_path, x_axis_step=1):
+    """Trace et sauvegarde les courbes (Loss ou Accuracy)."""
+    plt.figure(figsize=(10, 6))
+    
+    styles = {'4': '-', '8': '-', '16': '-', '32': '-'}
+    colors = {'4': 'black', '8': 'blue', '16': 'red', '32': 'green'}
+    
+    for name, values in history_dict.items():
+        # L'axe X dépend de si c'est Loss (toutes les epochs) ou Acc (intervalle)
+        epochs = np.arange(1, len(values) + 1) * x_axis_step
+        plt.plot(epochs, values, label=name, 
+                 linestyle=styles.get(name, '-'), color=colors.get(name))
+        
+    plt.title(title)
+    plt.xlabel("Époques")
+    plt.ylabel(ylabel)
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+# ==========================================
+# MAIN
+# ==========================================
+if __name__ == "__main__":
+    print(f"=== Expérience Globale (Train Global -> Test par Sujet) ===")
+    
+    # 1. Chargement Train ET Test Globaux
+    X_train, y_train, X_test, y_test = get_aggregated_dataset()
+    
+    X_train_all = torch.tensor(X_train, dtype=torch.float32).to(DEVICE)
+    y_train_all = torch.tensor(y_train, dtype=torch.long).to(DEVICE)
+    X_test_all = torch.tensor(X_test, dtype=torch.float32).to(DEVICE)
+    y_test_all = torch.tensor(y_test, dtype=torch.long).to(DEVICE)
+
+    del X_train, y_train, X_test, y_test
+    
+    # 2. Boucle d'Expérience
+    detailed_results = []
+    
+    # Dictionnaires pour stocker les historiques
+    all_losses_history = {}
+    all_testacc_history = {}
+
+    for name, n_filters in CONDITIONS.items():        
+        # A. Entraînement Global (Avec monitoring Test optimisé)
+        model, losses, val_accs = train_model(
+            X_train_all, y_train_all, 
+            X_test_all, y_test_all, 
+            n_filters, None, desc=f"T|n_filters={name}"
+        )
+        
+        all_losses_history[name] = losses
+        all_testacc_history[name] = val_accs
+        
+        # B. Évaluation Finale Détaillée PAR SUJET
+        accuracies = evaluate_per_subject(model, SUBJECTS, DEVICE)
+        
+        avg_acc = np.mean(list(accuracies.values()))
+        print(f" >> Moyenne Globale Finale pour {name} : {avg_acc:.2f}%")
+        
+        for subj, acc in accuracies.items():
+            detailed_results.append({
+                "n_filters": name,
+                "Subject": subj,
+                "Accuracy": acc
+            })
+            
+        torch.save(model.state_dict(), os.path.join(SAVE_DIR, f"Global_{name}.pth"))
+
+    # 4. Sauvegarde des Données Brutes (CSV)
+    # Loss (1 ligne par epoch)
+    df_losses = pd.DataFrame(all_losses_history)
+    df_losses.index.name = "Epoch"
+    df_losses.to_csv(os.path.join(SAVE_DIR, "history_losses.csv"))
+
+    # Accuracy (1 ligne par intervalle d'évaluation)
+    df_accs = pd.DataFrame(all_testacc_history)
+    df_accs.index.name = f"Step (x{EVAL_INTERVAL})"
+    df_accs.to_csv(os.path.join(SAVE_DIR, "history_val_accuracy.csv"))
+
+    # 5. Tracé des Courbes
+    plot_history(all_losses_history, "Évolution de la Loss", "Loss", 
+                 os.path.join(SAVE_DIR, "plot_losses.png"), x_axis_step=1)
+                 
+    plot_history(all_testacc_history, "Évolution de la Validation Accuracy", "Accuracy (%)", 
+                 os.path.join(SAVE_DIR, "plot_val_accuracy.png"), x_axis_step=EVAL_INTERVAL)
+
+    # 6. Tableau Final
+    df_detailed = pd.DataFrame(detailed_results)
+    pivot_table = df_detailed.pivot(index="Subject", columns="n_filters", values="Accuracy")
+    pivot_table["Mean"] = pivot_table.mean(axis=1)
+    pivot_table.loc['Total Mean'] = pivot_table.mean()
+
+    print("\n=== TABLEAU RÉCAPITULATIF (Accuracy %) ===")
+    print(pivot_table.round(2))
+    
+    pivot_table.to_csv(os.path.join(SAVE_DIR, "detailed_global_results.csv"))

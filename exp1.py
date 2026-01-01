@@ -17,12 +17,13 @@ from data_augment import GaussianNoise, HundredHzNoise
 # CONFIGURATION
 # ==========================================
 SUBJECTS = range(1, 10)
-N_EPOCHS = 60
+N_EPOCHS = 200
 BATCH_SIZE = 128
 LR = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SAVE_DIR = "exp1_logs"
 EVAL_INTERVAL = 5     # Évaluer toutes les X époques
+N_EVAL_SAMPLES = 500
 torch.manual_seed(42)
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -100,9 +101,13 @@ def train_model(X_train, y_train, X_test, y_test, augmenter=None, desc="Training
         if epoch % EVAL_INTERVAL == 0:
             model.eval()
             with torch.no_grad():
-                out_test = model(X_test)
+                idxs = torch.randperm(X_test.size(0))[:N_EVAL_SAMPLES]
+                X_sub = X_test[idxs]
+                y_sub = y_test[idxs]
+                
+                out_test = model(X_sub)
                 _, pred = torch.max(out_test, 1)
-                acc = (pred == y_test).sum().item() / N_EVAL_SAMPLES * 100
+                acc = (pred == y_sub).sum().item() / N_EVAL_SAMPLES * 100
                 
                 val_accuracies.append(acc) # On stocke juste la valeur
                 current_acc_str = f"{acc:.2f}%"
@@ -116,7 +121,6 @@ def evaluate_per_subject(model, subject_list, device):
     """Évalue le modèle global sur chaque sujet individuellement."""
     model.eval()
     subject_accuracies = {}
-    print("\n--- Évaluation détaillée par sujet ---")
     with torch.no_grad():
         for subject_id in subject_list:
             try:
