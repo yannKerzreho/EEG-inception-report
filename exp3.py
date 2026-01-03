@@ -17,7 +17,7 @@ from data_augment import GaussianNoise, HundredHzNoise
 # CONFIGURATION
 # ==========================================
 SUBJECTS = range(1, 10)
-N_EPOCHS = 200        # Comme demandé
+N_EPOCHS = 200
 BATCH_SIZE = 128
 LR = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -287,6 +287,6 @@ if __name__ == "__main__":
         ['mean', 'std', 'min', 'max']
     ).reset_index()
     
-    print("\n=== PERFORMANCES GLOBALES (Moyenne des 5 Seeds) ===")
+    print("\n=== PERFORMANCES GLOBALES (Moyenne des 3 Seeds) ===")
     print(summary_global.round(2))
     summary_global.to_csv(os.path.join(SAVE_DIR, "summary_global.csv"))
