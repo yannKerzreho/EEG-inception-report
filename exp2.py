@@ -211,7 +211,7 @@ def plot_history_shaded(history_dict, title, ylabel, save_path, x_axis_step=1):
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-    print(f"=== Expérience Multi-Seed {SEEDS} (Shaded Graphs & Full Stats) ===")
+    print(f"=== Expérience Multi-Seed {SEEDS} ===")
     
     # 1. Chargement Data Global
     X_train_np, y_train_np, X_test_np, y_test_np = get_aggregated_dataset()
